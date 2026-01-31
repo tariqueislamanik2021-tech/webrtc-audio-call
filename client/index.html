@@ -1,291 +1,214 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>ID-to-ID WebRTC Audio Call</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8"/>
+  <title>Masti call</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+
   <style>
-    body { font-family: Arial; max-width: 760px; margin: 28px auto; padding: 0 12px; }
-    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:12px 0; }
-    input { padding:10px; width:220px; }
-    button { padding:10px 14px; cursor:pointer; }
-    button:disabled { opacity:.55; cursor:not-allowed; }
-    .card { border:1px solid #ddd; border-radius:10px; padding:12px; margin-top:14px; }
-    .status { padding:8px 10px; border-radius:8px; background:#f6f6f6; display:inline-block; }
-    .danger { background:#ffecec; border:1px solid #ffb7b7; }
-    .ok { background:#ecfff1; border:1px solid #a9f1ba; }
-    code { background:#f3f3f3; padding:2px 6px; border-radius:6px; }
+    body{
+      margin:0;
+      font-family: Arial, sans-serif;
+      background:#ece5dd;
+    }
+
+    /* Top Bar */
+    .topbar{
+      background:#075E54;
+      color:white;
+      padding:15px;
+      font-size:20px;
+      font-weight:bold;
+    }
+
+    /* Layout */
+    .container{
+      display:flex;
+      height:calc(100vh - 55px);
+    }
+
+    /* Sidebar */
+    .sidebar{
+      width:280px;
+      background:white;
+      border-right:1px solid #ddd;
+      padding:10px;
+    }
+
+    .user{
+      padding:12px;
+      border-radius:10px;
+      margin-bottom:8px;
+      cursor:pointer;
+      background:#f7f7f7;
+    }
+    .user:hover{
+      background:#DCF8C6;
+    }
+
+    /* Main Panel */
+    .main{
+      flex:1;
+      padding:20px;
+    }
+
+    input{
+      padding:12px;
+      width:250px;
+      border-radius:8px;
+      border:1px solid #ccc;
+    }
+
+    button{
+      padding:12px 18px;
+      margin-left:6px;
+      border:none;
+      border-radius:8px;
+      cursor:pointer;
+      font-weight:bold;
+    }
+
+    .callBtn{
+      background:#25D366;
+      color:white;
+    }
+
+    .endBtn{
+      background:red;
+      color:white;
+    }
+
+    .status{
+      margin-top:20px;
+      font-size:16px;
+      font-weight:bold;
+    }
+
+    /* Incoming Call Popup */
+    .popup{
+      display:none;
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,0.6);
+      justify-content:center;
+      align-items:center;
+    }
+
+    .popupBox{
+      background:white;
+      padding:25px;
+      border-radius:15px;
+      text-align:center;
+      width:300px;
+    }
+
+    .accept{
+      background:#25D366;
+      color:white;
+    }
+
+    .reject{
+      background:red;
+      color:white;
+    }
   </style>
 </head>
+
 <body>
-  <h2>ID-to-ID Audio Call (WebRTC)</h2>
+  <div class="topbar">📞 Masti call</div>
 
-  <div class="card">
-    <div class="row">
-      <input id="myId" placeholder="Your 4-digit ID (e.g. 1023)" maxlength="4" />
-      <button id="regBtn">Set ID</button>
-      <span>My ID: <code id="myIdShow">-</code></span>
+  <div class="container">
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <h3>Online Users</h3>
+      <div id="onlineUsers"></div>
     </div>
 
-    <div class="row">
-      <input id="toId" placeholder="Call 4-digit ID (e.g. 2044)" maxlength="4" />
-      <button id="callBtn" disabled>Call</button>
-      <button id="endBtn" disabled>End</button>
+    <!-- Main -->
+    <div class="main">
+      <h2>Call by ID</h2>
+
+      <input id="myId" placeholder="Set Your 4-digit ID"/>
+      <button id="setBtn" class="callBtn">Set ID</button>
+
+      <br><br>
+
+      <input id="toId" placeholder="Enter ID to Call"/>
+      <button id="callBtn" class="callBtn">Call</button>
+      <button id="endBtn" class="endBtn">End</button>
+
+      <div class="status" id="status">Status: Idle</div>
+
+      <audio id="remoteAudio" autoplay playsinline></audio>
     </div>
+  </div>
 
-    <div class="row">
-      <span>Status:</span>
-      <span id="status" class="status">Idle</span>
-    </div>
-
-    <div id="incomingBox" class="card danger" style="display:none;">
-      <div><b>Incoming call from <span id="fromIdShow"></span></b></div>
-      <div class="row">
-        <button id="acceptBtn">Accept</button>
-        <button id="rejectBtn">Reject</button>
-      </div>
-    </div>
-
-    <div class="row">
-      <label><input type="checkbox" id="muteChk" disabled /> Mute mic</label>
-    </div>
-
-    <audio id="remoteAudio" autoplay></audio>
-
-    <div class="card">
-      <b>Online IDs:</b> <span id="onlineList">-</span>
+  <!-- Incoming Call Popup -->
+  <div class="popup" id="popup">
+    <div class="popupBox">
+      <h2>Incoming Call</h2>
+      <p id="callerId"></p>
+      <button id="acceptBtn" class="accept">Accept</button>
+      <button id="rejectBtn" class="reject">Reject</button>
     </div>
   </div>
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    const myIdEl = document.getElementById("myId");
-    const regBtn = document.getElementById("regBtn");
-    const myIdShow = document.getElementById("myIdShow");
-
-    const toIdEl = document.getElementById("toId");
-    const callBtn = document.getElementById("callBtn");
-    const endBtn = document.getElementById("endBtn");
-
-    const statusEl = document.getElementById("status");
-    const incomingBox = document.getElementById("incomingBox");
-    const fromIdShow = document.getElementById("fromIdShow");
-    const acceptBtn = document.getElementById("acceptBtn");
-    const rejectBtn = document.getElementById("rejectBtn");
-
-    const muteChk = document.getElementById("muteChk");
-    const remoteAudio = document.getElementById("remoteAudio");
-    const onlineList = document.getElementById("onlineList");
-
-    const socket = io(); // localhost:3000
+    const socket = io();
 
     let myId = "";
-    let currentPeerId = ""; // যাকে কল চলছে/করবো
-    let pc = null;
-    let localStream = null;
-    let inCall = false;
+    let peerId = "";
+    let pc;
+    let localStream;
+
+    const statusEl = document.getElementById("status");
+    const popup = document.getElementById("popup");
+    const callerId = document.getElementById("callerId");
 
     const iceServers = {
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" }
-        // Deploy + TURN হলে এখানে TURN যোগ করবেন
-      ]
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
     };
 
-    function setStatus(t, kind="") {
-      statusEl.textContent = t;
-      statusEl.className = "status" + (kind ? (" " + kind) : "");
+    function setStatus(msg){
+      statusEl.innerText = "Status: " + msg;
     }
 
-    function is4Digit(x) {
-      return /^[0-9]{4}$/.test(String(x));
-    }
-
-    function enableControls() {
-      callBtn.disabled = !(myId && is4Digit(toIdEl.value.trim())) || inCall;
-      endBtn.disabled = !inCall;
-      muteChk.disabled = !inCall || !localStream;
-    }
-
-    async function getMic() {
-      if (localStream) return localStream;
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      return localStream;
-    }
-
-    async function initPC() {
-      pc = new RTCPeerConnection(iceServers);
-
-      pc.onicecandidate = (e) => {
-        if (e.candidate && currentPeerId) {
-          socket.emit("ice-candidate", { toUserId: currentPeerId, candidate: e.candidate });
-        }
-      };
-
-      pc.ontrack = (e) => {
-        remoteAudio.srcObject = e.streams[0];
-      };
-
-      pc.onconnectionstatechange = () => {
-        const s = pc.connectionState;
-        if (s === "connected") setStatus("Call connected ✅", "ok");
-        if (s === "failed" || s === "disconnected" || s === "closed") {
-          if (inCall) endLocal("Call ended.");
-        }
-      };
-
-      const stream = await getMic();
-      stream.getTracks().forEach(tr => pc.addTrack(tr, stream));
-    }
-
-    function endLocal(msg) {
-      setStatus(msg || "Ended");
-      try { if (pc) pc.close(); } catch {}
-      pc = null;
-
-      try { if (localStream) localStream.getTracks().forEach(t => t.stop()); } catch {}
-      localStream = null;
-
-      remoteAudio.srcObject = null;
-      inCall = false;
-      incomingBox.style.display = "none";
-      muteChk.checked = false;
-      currentPeerId = "";
-      enableControls();
-    }
-
-    // Register
-    regBtn.onclick = () => {
-      const id = myIdEl.value.trim();
-      if (!is4Digit(id)) return alert("আপনার ID অবশ্যই ৪ ডিজিট হতে হবে (0000-9999).");
-      socket.emit("register", { userId: id });
+    document.getElementById("setBtn").onclick = ()=>{
+      myId = document.getElementById("myId").value;
+      socket.emit("register",{userId:myId});
+      setStatus("Registered as " + myId);
     };
 
-    // Call by ID
-    callBtn.onclick = () => {
-      const toId = toIdEl.value.trim();
-      if (!is4Digit(toId)) return;
-      currentPeerId = toId;
-      setStatus("Calling…");
-      socket.emit("call-user", { toUserId: toId });
+    document.getElementById("callBtn").onclick = ()=>{
+      peerId = document.getElementById("toId").value;
+      socket.emit("call-user",{toUserId:peerId});
+      setStatus("Calling " + peerId);
     };
 
-    // End call
-    endBtn.onclick = () => {
-      if (currentPeerId) socket.emit("end-call", { toUserId: currentPeerId });
-      endLocal("You ended the call.");
+    document.getElementById("endBtn").onclick = ()=>{
+      socket.emit("end-call",{toUserId:peerId});
+      setStatus("Call Ended");
     };
 
-    // Mute
-    muteChk.onchange = () => {
-      if (!localStream) return;
-      localStream.getAudioTracks().forEach(t => t.enabled = !muteChk.checked);
+    socket.on("incoming-call", ({fromUserId})=>{
+      peerId = fromUserId;
+      callerId.innerText = "User " + fromUserId + " is calling...";
+      popup.style.display="flex";
+    });
+
+    document.getElementById("acceptBtn").onclick = ()=>{
+      popup.style.display="none";
+      socket.emit("call-accept",{toUserId:peerId});
+      setStatus("Accepted call...");
     };
 
-    toIdEl.oninput = enableControls;
-
-    // Server events
-    socket.on("registered", ({ userId }) => {
-      myId = userId;
-      myIdShow.textContent = myId;
-      setStatus("Registered ✅ Now you can call by ID.", "ok");
-      enableControls();
-    });
-
-    socket.on("register-error", ({ message }) => {
-      setStatus(message || "Register error", "danger");
-    });
-
-    socket.on("online-users", ({ users }) => {
-      onlineList.textContent = (users && users.length) ? users.join(", ") : "-";
-    });
-
-    socket.on("user-offline", ({ toUserId }) => {
-      setStatus(`User ${toUserId} is offline.`, "danger");
-      endLocal("User offline.");
-    });
-
-    socket.on("call-error", ({ message }) => {
-      setStatus(message || "Call error", "danger");
-    });
-
-    socket.on("calling", ({ toUserId }) => {
-      setStatus(`Ringing ${toUserId}…`);
-    });
-
-    // Incoming call
-    socket.on("incoming-call", ({ fromUserId }) => {
-      if (inCall) return;
-      currentPeerId = fromUserId;
-      fromIdShow.textContent = fromUserId;
-      incomingBox.style.display = "block";
-      setStatus("Incoming call…", "danger");
-
-      acceptBtn.onclick = () => {
-        incomingBox.style.display = "none";
-        setStatus("Accepted. Connecting…");
-        socket.emit("call-accept", { toUserId: fromUserId });
-      };
-
-      rejectBtn.onclick = () => {
-        incomingBox.style.display = "none";
-        setStatus("Rejected.", "");
-        socket.emit("call-reject", { toUserId: fromUserId, reason: "User rejected" });
-        currentPeerId = "";
-      };
-    });
-
-    // Caller receives accepted -> create offer
-    socket.on("call-accepted", async ({ by }) => {
-      if (inCall) return;
-      currentPeerId = by;
-      inCall = true;
-      enableControls();
-
-      await initPC();
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socket.emit("offer", { toUserId: currentPeerId, offer });
-      setStatus("Offer sent. Waiting answer…");
-    });
-
-    socket.on("call-rejected", ({ by, reason }) => {
-      setStatus(`Rejected by ${by}: ${reason || ""}`, "danger");
-      endLocal("Rejected.");
-    });
-
-    // Callee receives offer -> answer
-    socket.on("offer", async ({ fromUserId, offer }) => {
-      currentPeerId = fromUserId;
-      inCall = true;
-      enableControls();
-
-      await initPC();
-      await pc.setRemoteDescription(offer);
-
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      socket.emit("answer", { toUserId: fromUserId, answer });
-      setStatus("Answer sent. Connecting…");
-    });
-
-    socket.on("answer", async ({ fromUserId, answer }) => {
-      if (!pc) return;
-      currentPeerId = fromUserId;
-      await pc.setRemoteDescription(answer);
-      setStatus("Call connected ✅", "ok");
-    });
-
-    socket.on("ice-candidate", async ({ candidate }) => {
-      try { if (pc && candidate) await pc.addIceCandidate(candidate); } catch {}
-    });
-
-    socket.on("call-ended", ({ by }) => {
-      setStatus(`Call ended by ${by}`, "");
-      endLocal("Peer ended the call.");
-    });
-
-    enableControls();
+    document.getElementById("rejectBtn").onclick = ()=>{
+      popup.style.display="none";
+      socket.emit("call-reject",{toUserId:peerId});
+      setStatus("Rejected call");
+    };
   </script>
 </body>
 </html>
