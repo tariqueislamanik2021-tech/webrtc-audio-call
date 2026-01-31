@@ -6,110 +6,67 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
 
   <style>
-    body{
-      margin:0;
-      font-family: Arial, sans-serif;
-      background:#ece5dd;
-    }
+    body{ margin:0; font-family: Arial, sans-serif; background:#ece5dd; }
 
     /* Top Bar */
-    .topbar{
-      background:#075E54;
-      color:white;
-      padding:15px;
-      font-size:20px;
-      font-weight:bold;
-    }
+    .topbar{ background:#075E54; color:white; padding:15px; font-size:20px; font-weight:bold; }
 
     /* Layout */
-    .container{
-      display:flex;
-      height:calc(100vh - 55px);
-    }
+    .container{ display:flex; height:calc(100vh - 55px); }
 
     /* Sidebar */
-    .sidebar{
-      width:280px;
-      background:white;
-      border-right:1px solid #ddd;
-      padding:10px;
-    }
+    .sidebar{ width:280px; background:white; border-right:1px solid #ddd; padding:10px; }
 
-    .user{
-      padding:12px;
-      border-radius:10px;
-      margin-bottom:8px;
-      cursor:pointer;
-      background:#f7f7f7;
-    }
-    .user:hover{
-      background:#DCF8C6;
-    }
+    .user{ padding:12px; border-radius:10px; margin-bottom:8px; cursor:pointer; background:#f7f7f7; }
+    .user:hover{ background:#DCF8C6; }
 
     /* Main Panel */
-    .main{
-      flex:1;
-      padding:20px;
-    }
+    .main{ flex:1; padding:20px; }
 
     input{
-      padding:12px;
-      width:250px;
-      border-radius:8px;
-      border:1px solid #ccc;
+      padding:12px; width:250px; border-radius:8px; border:1px solid #ccc;
     }
 
     button{
-      padding:12px 18px;
-      margin-left:6px;
-      border:none;
-      border-radius:8px;
-      cursor:pointer;
-      font-weight:bold;
+      padding:12px 18px; margin-left:6px; border:none; border-radius:8px;
+      cursor:pointer; font-weight:bold;
     }
 
-    .callBtn{
-      background:#25D366;
-      color:white;
-    }
+    .callBtn{ background:#25D366; color:white; }
+    .endBtn{ background:red; color:white; }
 
-    .endBtn{
-      background:red;
-      color:white;
-    }
-
-    .status{
-      margin-top:20px;
-      font-size:16px;
-      font-weight:bold;
-    }
+    .status{ margin-top:20px; font-size:16px; font-weight:bold; }
 
     /* Incoming Call Popup */
     .popup{
-      display:none;
-      position:fixed;
-      inset:0;
-      background:rgba(0,0,0,0.6);
-      justify-content:center;
-      align-items:center;
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6);
+      justify-content:center; align-items:center; z-index:20;
     }
-
     .popupBox{
-      background:white;
-      padding:25px;
-      border-radius:15px;
-      text-align:center;
-      width:300px;
+      background:white; padding:25px; border-radius:15px; text-align:center; width:300px;
     }
+    .accept{ background:#25D366; color:white; }
+    .reject{ background:red; color:white; }
 
-    .accept{
-      background:#25D366;
-      color:white;
+    /* ✅ Login Modal */
+    .modal{
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,.65);
+      justify-content:center; align-items:center; z-index:30;
     }
-
-    .reject{
-      background:red;
-      color:white;
+    .modalBox{
+      width:340px; background:#fff; border-radius:16px; padding:18px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    .modalBox h2{ margin:0 0 12px 0; }
+    .modalBox input{ width:100%; box-sizing:border-box; margin:6px 0; }
+    .row{ display:flex; gap:10px; margin-top:10px; }
+    .row button{ flex:1; margin-left:0; }
+    .small{ font-size:13px; color:#666; margin-top:8px; }
+    .danger{ background:#d33; color:#fff; }
+    .muted{ color:#666; }
+    .pill{
+      display:inline-block; background:#fff; border:1px solid #cfe6d9;
+      border-radius:999px; padding:6px 10px; margin-top:10px;
     }
   </style>
 </head>
@@ -129,8 +86,18 @@
     <div class="main">
       <h2>Call by ID</h2>
 
-      <input id="myId" placeholder="Set Your 4-digit ID"/>
-      <button id="setBtn" class="callBtn">Set ID</button>
+      <!-- ✅ My ID auto show -->
+      <div class="pill">
+        Your ID: <b id="myIdText">Not logged in</b>
+      </div>
+
+      <br><br>
+
+      <!-- Keep existing input but readonly now -->
+      <input id="myId" placeholder="Your 4-digit ID" readonly />
+      <button id="setBtn" class="callBtn" disabled>Set ID</button>
+
+      <button id="logoutBtn" class="danger" style="margin-left:10px;">Logout</button>
 
       <br><br>
 
@@ -154,9 +121,144 @@
     </div>
   </div>
 
- <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <!-- ✅ Login Modal -->
+  <div class="modal" id="loginModal">
+    <div class="modalBox">
+      <h2>Login</h2>
+      <input id="phone" placeholder="Phone (e.g. 017xxxxxxxx)" />
+      <input id="name" placeholder="Name (optional)" />
+      <div class="row">
+        <button id="loginBtn" class="callBtn">Login</button>
+        <button id="clearBtn" class="danger">Clear</button>
+      </div>
+      <div class="small" id="loginMsg"></div>
+      <div class="small muted">Login করলে আপনার 4-digit ID auto-save থাকবে, পরেরবার auto-login হবে।</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 
 <script>
+/** =========================
+ * ✅ Auth + Auto-login Setup
+ * ========================== */
+
+// If same origin (recommended), keep empty.
+// If server is on another port/host, set like "http://localhost:3000"
+const API_BASE = "";
+
+function setAuth(token, userId){
+  localStorage.setItem("token", token);
+  localStorage.setItem("userId", userId);
+}
+function clearAuth(){
+  localStorage.removeItem("token");
+  localStorage.removeItem("userId");
+}
+function getToken(){
+  return localStorage.getItem("token");
+}
+function getSavedUserId(){
+  return localStorage.getItem("userId");
+}
+
+async function api(path, opts={}){
+  const token = getToken();
+  const headers = { "Content-Type":"application/json", ...(opts.headers||{}) };
+  if(token) headers.Authorization = "Bearer " + token;
+
+  const res = await fetch(API_BASE + path, { ...opts, headers });
+  const data = await res.json().catch(()=> ({}));
+  if(!res.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
+const loginModal = document.getElementById("loginModal");
+const loginMsg = document.getElementById("loginMsg");
+const myIdText = document.getElementById("myIdText");
+
+function openLogin(msg=""){
+  loginMsg.textContent = msg;
+  loginModal.style.display = "flex";
+}
+function closeLogin(){
+  loginModal.style.display = "none";
+}
+
+function setMyIdUI(id){
+  document.getElementById("myId").value = id || "";
+  myIdText.textContent = id || "Not logged in";
+}
+
+async function doRegisterSocket(userId){
+  // register to socket system (your existing server expects 4-digit)
+  socket.emit("register", { userId });
+}
+
+async function autoLogin(){
+  const token = getToken();
+  const savedId = getSavedUserId();
+
+  if(!token || !savedId){
+    setMyIdUI("");
+    openLogin("Please login to get your default ID.");
+    return;
+  }
+
+  try{
+    const me = await api("/auth/me");
+    setMyIdUI(me.userId);
+    closeLogin();
+    await doRegisterSocket(me.userId);
+    setStatus("Registered as " + me.userId);
+  }catch(e){
+    clearAuth();
+    setMyIdUI("");
+    openLogin("Session expired. Please login again.");
+  }
+}
+
+document.getElementById("loginBtn").onclick = async () => {
+  loginMsg.textContent = "Logging in...";
+  try{
+    const phone = document.getElementById("phone").value.trim();
+    const name  = document.getElementById("name").value.trim();
+    const data = await api("/auth/login", {
+      method:"POST",
+      body: JSON.stringify({ phone, name })
+    });
+
+    setAuth(data.token, data.userId);
+
+    // confirm
+    const me = await api("/auth/me");
+    setMyIdUI(me.userId);
+    closeLogin();
+    await doRegisterSocket(me.userId);
+    setStatus("Registered as " + me.userId);
+  }catch(e){
+    loginMsg.textContent = e.message;
+  }
+};
+
+document.getElementById("clearBtn").onclick = () => {
+  document.getElementById("phone").value = "";
+  document.getElementById("name").value = "";
+  loginMsg.textContent = "";
+};
+
+document.getElementById("logoutBtn").onclick = () => {
+  clearAuth();
+  setMyIdUI("");
+  openLogin("Logged out. Please login again.");
+  setStatus("Idle");
+};
+
+
+/** =========================
+ * ✅ Your Existing Call App
+ * ========================== */
+
 const socket = io();
 
 let myId="", peerId="";
@@ -198,15 +300,16 @@ async function setupPC(){
   stream.getTracks().forEach(t=>pc.addTrack(t,stream));
 }
 
-/* Register */
-document.getElementById("setBtn").onclick=()=>{
-  myId=document.getElementById("myId").value.trim();
-  socket.emit("register",{userId:myId});
-  setStatus("Registered as "+myId);
-};
+/* Keep Set ID button disabled (login handles it) */
+document.getElementById("setBtn").onclick=()=>{};
 
 /* Call */
 document.getElementById("callBtn").onclick=()=>{
+  const saved = getSavedUserId();
+  if(!saved){
+    openLogin("Please login first.");
+    return;
+  }
   peerId=document.getElementById("toId").value.trim();
   socket.emit("call-user",{toUserId:peerId});
   setStatus("Calling "+peerId+"...");
@@ -272,6 +375,39 @@ document.getElementById("endBtn").onclick=()=>{
   socket.emit("end-call",{toUserId:peerId});
   setStatus("Call Ended");
 };
+
+/* Online users list (optional show in sidebar) */
+socket.on("online-users", ({users}) => {
+  const wrap = document.getElementById("onlineUsers");
+  wrap.innerHTML = "";
+  users.forEach(u => {
+    const div = document.createElement("div");
+    div.className = "user";
+    div.textContent = `${u.id} (${u.status})`;
+    div.onclick = () => {
+      document.getElementById("toId").value = u.id;
+    };
+    wrap.appendChild(div);
+  });
+});
+
+/* Handle force logout when same ID used elsewhere */
+socket.on("force-logout", ({message}) => {
+  clearAuth();
+  setMyIdUI("");
+  openLogin(message || "Logged out.");
+  setStatus("Idle");
+});
+
+/* Basic errors */
+socket.on("error-msg", ({message}) => setStatus(message || "Error"));
+socket.on("busy", ({toUserId}) => setStatus(`User ${toUserId} is busy`));
+socket.on("user-offline", ({toUserId}) => setStatus(`User ${toUserId} is offline`));
+socket.on("call-rejected", ({fromUserId}) => setStatus(`Call rejected by ${fromUserId}`));
+socket.on("call-ended", ({fromUserId}) => setStatus(`Call ended (${fromUserId})`));
+
+/* Start auto-login on load */
+autoLogin();
 </script>
 
 </body>
