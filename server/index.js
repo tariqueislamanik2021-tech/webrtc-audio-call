@@ -1,120 +1,205 @@
+const path = require("path");
 const express = require("express");
 const http = require("http");
-const path = require("path");
 const { Server } = require("socket.io");
 
 const app = express();
+
+/* ================================
+   Serve Client Folder
+================================ */
+const clientDir = path.join(__dirname, "..", "client");
+app.use(express.static(clientDir));
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(clientDir, "index.html"));
+});
+
+/* ================================
+   Create HTTP Server + Socket.IO
+================================ */
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
 
-// serve client
-app.use(express.static(path.join(__dirname, "../client")));
+const io = new Server(server, {
+  cors: {
+    origin: true,
+    methods: ["GET", "POST"],
+  },
+});
 
-// userId <-> socketId maps
-const users = new Map();   // userId -> socketId
-const sockets = new Map(); // socketId -> userId
+/* ================================
+   Store Online Users
+   userId -> socket.id
+================================ */
+const users = new Map();
 
-function isValidUserId(userId) {
-  return /^[0-9]{4}$/.test(String(userId));
+function onlineUsersArray() {
+  return Array.from(users.keys()).sort();
 }
 
-function getSocketByUserId(userId) {
-  return users.get(String(userId));
+function broadcastOnlineUsers() {
+  io.emit("online-users", { users: onlineUsersArray() });
 }
 
+/* ================================
+   Socket Connection
+================================ */
 io.on("connection", (socket) => {
-  console.log("Connected:", socket.id);
+  console.log("✅ New socket connected:", socket.id);
 
-  // 1) Register 4-digit ID
+  /* -------- Register User ID -------- */
   socket.on("register", ({ userId }) => {
-    userId = String(userId || "").trim();
+    const cleanId = String(userId || "").trim();
 
-    if (!isValidUserId(userId)) {
-      return socket.emit("register-error", { message: "ID must be exactly 4 digits (0000-9999)" });
+    // Must be 4-digit
+    if (!/^\d{4}$/.test(cleanId)) {
+      socket.emit("error-msg", {
+        message: "Invalid ID. Must be exactly 4 digits.",
+      });
+      return;
     }
 
-    // যদি অন্য কেউ একই ID নিয়ে already online থাকে
-    const existingSocket = users.get(userId);
-    if (existingSocket && existingSocket !== socket.id) {
-      return socket.emit("register-error", { message: "This ID is already in use. Choose another." });
+    // Kick old socket if duplicate login
+    const oldSocketId = users.get(cleanId);
+    if (oldSocketId && oldSocketId !== socket.id) {
+      io.to(oldSocketId).emit("force-logout", {
+        message: "You logged in from another device/tab.",
+      });
     }
 
-    // আগের কোনো ID থাকলে clean
-    const oldId = sockets.get(socket.id);
-    if (oldId && oldId !== userId) users.delete(oldId);
+    // Save user
+    users.set(cleanId, socket.id);
+    socket.data.userId = cleanId;
 
-    users.set(userId, socket.id);
-    sockets.set(socket.id, userId);
+    socket.emit("registered", { userId: cleanId });
 
-    socket.emit("registered", { userId });
-    io.emit("online-users", { users: Array.from(users.keys()) });
+    broadcastOnlineUsers();
+    console.log("✅ Registered User:", cleanId);
   });
 
-  // 2) Call request by target ID
+  /* -------- Call User -------- */
   socket.on("call-user", ({ toUserId }) => {
-    const fromUserId = sockets.get(socket.id);
-    toUserId = String(toUserId || "").trim();
+    const fromUserId = socket.data.userId;
 
-    if (!fromUserId) return socket.emit("call-error", { message: "Register your ID first." });
-    if (!isValidUserId(toUserId)) return socket.emit("call-error", { message: "Target ID must be 4 digits." });
-    if (toUserId === fromUserId) return socket.emit("call-error", { message: "You cannot call yourself." });
+    if (!fromUserId) {
+      socket.emit("error-msg", { message: "Please Set ID first." });
+      return;
+    }
 
-    const toSocket = getSocketByUserId(toUserId);
-    if (!toSocket) return socket.emit("user-offline", { toUserId });
+    const targetId = String(toUserId || "").trim();
 
-    io.to(toSocket).emit("incoming-call", { fromUserId });
-    socket.emit("calling", { toUserId });
+    if (!/^\d{4}$/.test(targetId)) {
+      socket.emit("error-msg", { message: "Target ID must be 4 digits." });
+      return;
+    }
+
+    const toSocketId = users.get(targetId);
+
+    if (!toSocketId) {
+      socket.emit("user-offline", { toUserId: targetId });
+      return;
+    }
+
+    io.to(toSocketId).emit("incoming-call", { fromUserId });
+    socket.emit("calling", { toUserId: targetId });
+
+    console.log(`📞 ${fromUserId} is calling ${targetId}`);
   });
 
-  // 3) Accept / Reject
+  /* -------- Accept Call -------- */
   socket.on("call-accept", ({ toUserId }) => {
-    const fromUserId = sockets.get(socket.id); // acceptor
-    toUserId = String(toUserId || "").trim();
-    const toSocket = getSocketByUserId(toUserId);
-    if (toSocket) io.to(toSocket).emit("call-accepted", { by: fromUserId });
+    const fromUserId = socket.data.userId;
+    const targetId = String(toUserId || "").trim();
+
+    const toSocketId = users.get(targetId);
+
+    if (toSocketId) {
+      io.to(toSocketId).emit("call-accepted", { fromUserId });
+    }
   });
 
-  socket.on("call-reject", ({ toUserId, reason }) => {
-    const fromUserId = sockets.get(socket.id);
-    toUserId = String(toUserId || "").trim();
-    const toSocket = getSocketByUserId(toUserId);
-    if (toSocket) io.to(toSocket).emit("call-rejected", { by: fromUserId, reason: reason || "Rejected" });
+  /* -------- Reject Call -------- */
+  socket.on("call-reject", ({ toUserId }) => {
+    const fromUserId = socket.data.userId;
+    const targetId = String(toUserId || "").trim();
+
+    const toSocketId = users.get(targetId);
+
+    if (toSocketId) {
+      io.to(toSocketId).emit("call-rejected", { fromUserId });
+    }
   });
 
-  // 4) WebRTC signaling by ID (offer/answer/ice)
-  socket.on("offer", ({ toUserId, offer }) => {
-    const fromUserId = sockets.get(socket.id);
-    const toSocket = getSocketByUserId(String(toUserId || "").trim());
-    if (toSocket) io.to(toSocket).emit("offer", { fromUserId, offer });
+  /* -------- WebRTC Offer -------- */
+  socket.on("webrtc-offer", ({ toUserId, offer }) => {
+    const fromUserId = socket.data.userId;
+    const targetId = String(toUserId || "").trim();
+
+    const toSocketId = users.get(targetId);
+
+    if (toSocketId) {
+      io.to(toSocketId).emit("webrtc-offer", { fromUserId, offer });
+    }
   });
 
-  socket.on("answer", ({ toUserId, answer }) => {
-    const fromUserId = sockets.get(socket.id);
-    const toSocket = getSocketByUserId(String(toUserId || "").trim());
-    if (toSocket) io.to(toSocket).emit("answer", { fromUserId, answer });
+  /* -------- WebRTC Answer -------- */
+  socket.on("webrtc-answer", ({ toUserId, answer }) => {
+    const fromUserId = socket.data.userId;
+    const targetId = String(toUserId || "").trim();
+
+    const toSocketId = users.get(targetId);
+
+    if (toSocketId) {
+      io.to(toSocketId).emit("webrtc-answer", { fromUserId, answer });
+    }
   });
 
+  /* -------- ICE Candidate -------- */
   socket.on("ice-candidate", ({ toUserId, candidate }) => {
-    const fromUserId = sockets.get(socket.id);
-    const toSocket = getSocketByUserId(String(toUserId || "").trim());
-    if (toSocket) io.to(toSocket).emit("ice-candidate", { fromUserId, candidate });
+    const fromUserId = socket.data.userId;
+    const targetId = String(toUserId || "").trim();
+
+    const toSocketId = users.get(targetId);
+
+    if (toSocketId) {
+      io.to(toSocketId).emit("ice-candidate", {
+        fromUserId,
+        candidate,
+      });
+    }
   });
 
-  // 5) End call
+  /* -------- End Call -------- */
   socket.on("end-call", ({ toUserId }) => {
-    const fromUserId = sockets.get(socket.id);
-    const toSocket = getSocketByUserId(String(toUserId || "").trim());
-    if (toSocket) io.to(toSocket).emit("call-ended", { by: fromUserId });
+    const fromUserId = socket.data.userId;
+    const targetId = String(toUserId || "").trim();
+
+    const toSocketId = users.get(targetId);
+
+    if (toSocketId) {
+      io.to(toSocketId).emit("call-ended", { fromUserId });
+    }
+
+    console.log(`❌ Call ended between ${fromUserId} and ${targetId}`);
   });
 
-  // 6) Disconnect cleanup
+  /* -------- Disconnect -------- */
   socket.on("disconnect", () => {
-    const userId = sockets.get(socket.id);
-    if (userId) users.delete(userId);
-    sockets.delete(socket.id);
-    io.emit("online-users", { users: Array.from(users.keys()) });
-    console.log("Disconnected:", socket.id, "userId:", userId);
+    const userId = socket.data.userId;
+
+    if (userId && users.get(userId) === socket.id) {
+      users.delete(userId);
+      broadcastOnlineUsers();
+      console.log("❌ User disconnected:", userId);
+    }
   });
 });
 
-server.listen(3000, () => console.log("✅ Open http://localhost:3000"));
+/* ================================
+   Start Server
+================================ */
+const PORT = process.env.PORT || 3000;
+
+server.listen(PORT, () => {
+  console.log("✅ Server running on port", PORT);
+});
